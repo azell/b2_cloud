@@ -4,8 +4,10 @@ import com.backblaze.b2.client.B2StorageClient;
 import com.backblaze.b2.client.contentSources.B2ContentTypes;
 import com.backblaze.b2.client.contentSources.B2FileContentSource;
 import com.backblaze.b2.client.exceptions.B2Exception;
+import com.backblaze.b2.client.exceptions.B2NotFoundException;
+import com.backblaze.b2.client.structures.B2Bucket;
 import com.backblaze.b2.client.structures.B2FileVersion;
-import com.backblaze.b2.client.structures.B2ListFileVersionsRequest;
+import com.backblaze.b2.client.structures.B2GetFileInfoByNameRequest;
 import com.backblaze.b2.client.structures.B2UploadFileRequest;
 import com.backblaze.b2.client.structures.B2UploadListener;
 import com.backblaze.b2.client.webApiHttpClient.B2StorageHttpClientBuilder;
@@ -14,8 +16,6 @@ import com.backblaze.b2.util.B2Sha1;
 import java.io.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Predicate;
-import java.util.stream.StreamSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,21 +24,23 @@ public class Main {
 
   private final ExecutorService executor;
   private final B2StorageClient client;
-  private final String bucketId;
+  private final B2Bucket bucket;
 
-  private Main(ExecutorService executor, B2StorageClient client, String bucketId) {
+  private Main(ExecutorService executor, B2StorageClient client, B2Bucket bucket) {
     this.executor = executor;
     this.client = client;
-    this.bucketId = bucketId;
+    this.bucket = bucket;
   }
 
   public static void main(String[] args) throws B2Exception, IOException {
     var executor =
-        Executors.newFixedThreadPool(8, B2ExecutorUtils.createThreadFactory("b2_cloud-%d"));
+        Executors.newFixedThreadPool(
+            Runtime.getRuntime().availableProcessors(),
+            B2ExecutorUtils.createThreadFactory("b2_cloud-%d"));
 
     try (var client = B2StorageHttpClientBuilder.builder("b2_cloud").build();
         var reader = new BufferedReader(new InputStreamReader(System.in))) {
-      var main = new Main(executor, client, args[0]);
+      var main = new Main(executor, client, client.getBucketOrNullByName(args[0]));
 
       main.cleanupFiles();
       reader.lines().forEach(main::uploadFile);
@@ -48,7 +50,7 @@ public class Main {
   }
 
   public void cleanupFiles() throws B2Exception {
-    client.unfinishedLargeFiles(bucketId).forEach(this::cancel);
+    client.unfinishedLargeFiles(bucket.getBucketId()).forEach(this::cancel);
   }
 
   public void uploadFile(String fileName) {
@@ -68,25 +70,15 @@ public class Main {
   }
 
   private boolean exists(String fileName, String sha1) throws B2Exception {
-    var request =
-        B2ListFileVersionsRequest.builder(bucketId)
-            .setStartFileName(fileName)
-            .setPrefix(fileName)
-            .build();
+    try {
+      var version =
+          client.getFileInfoByName(
+              B2GetFileInfoByNameRequest.builder(bucket.getBucketName(), fileName).build());
 
-    Predicate<B2FileVersion> filter =
-        v ->
-            fileName.equals(v.getFileName())
-                && (sha1.equals(v.getContentSha1()) || sha1.equals(v.getLargeFileSha1OrNull()));
-
-    var opt =
-        StreamSupport.stream(client.fileVersions(request).spliterator(), false)
-            .filter(filter)
-            .findFirst();
-
-    opt.ifPresent(v -> LOGGER.info("{} exists -> {}", v.getFileName(), v.getFileId()));
-
-    return opt.isPresent();
+      return sha1.equals(version.getContentSha1()) || sha1.equals(version.getLargeFileSha1OrNull());
+    } catch (B2NotFoundException e) {
+      return false;
+    }
   }
 
   private B2UploadListener listener(String fileName) {
@@ -110,12 +102,14 @@ public class Main {
     }
 
     if (exists(fileName, sha1)) {
+      LOGGER.info("{} exists with matching checksum {}", fileName, sha1);
+
       return;
     }
 
     var request =
         B2UploadFileRequest.builder(
-                bucketId,
+                bucket.getBucketId(),
                 fileName,
                 B2ContentTypes.B2_AUTO,
                 B2FileContentSource.builder(file).setSha1(sha1).build())
