@@ -1,0 +1,14 @@
+ext {
+  versions = [
+    b2: '2.0.0',
+    logback: '1.3.0-alpha4',
+    slf4j: '1.8.0-beta4',
+  ]
+
+  libraries = [
+    b2Core: "com.backblaze.b2:b2-sdk-core:${versions.b2}",
+    b2HttpClient: "com.backblaze.b2:b2-sdk-httpclient:${versions.b2}",
+    logbackClassic: "ch.qos.logback:logback-classic:${versions.logback}",
+    slf4jApi: "org.slf4j:slf4j-api:${versions.slf4j}",
+  ]
+}

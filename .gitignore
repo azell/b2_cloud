@@ -25,5 +25,6 @@ hs_err_pid*
 # IntelliJ IDEA
 .idea/
 
-# Maven build artifacts
-target/
+# Gradle build artifacts
+.gradle/
+build/

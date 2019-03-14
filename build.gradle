@@ -1,0 +1,38 @@
+plugins {
+  id 'application'
+  id 'com.diffplug.gradle.spotless' version '3.19.0'
+  id 'com.github.ben-manes.versions' version '0.21.0'
+  id 'com.github.johnrengelman.shadow' version '5.0.0'
+}
+
+repositories {
+  jcenter()
+}
+
+apply from: "$rootDir/gradle/dependencies.gradle"
+apply from: "$rootDir/gradle/resolveDependencies.gradle"
+
+dependencies {
+  implementation libraries.b2Core
+  implementation libraries.b2HttpClient
+  implementation libraries.logbackClassic
+  implementation libraries.slf4jApi
+}
+
+mainClassName = 'com.github.azell.b2_cloud.Main'
+
+spotless {
+  java {
+    googleJavaFormat()
+  }
+}
+
+tasks.withType(JavaCompile) {
+  options.compilerArgs << '-parameters'
+  options.deprecation = 'true'
+
+  sourceCompatibility = JavaVersion.VERSION_11
+  targetCompatibility = JavaVersion.VERSION_11
+}
+
+version = '1.0-dev'

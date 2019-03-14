@@ -97,8 +97,8 @@ public class Main {
     var file = new File(fileName);
     String sha1;
 
-    try (InputStream in = new FileInputStream(file)) {
-      sha1 = B2Sha1.hexSha1OfInputStream(in);
+    try (var inp = new FileInputStream(file)) {
+      sha1 = B2Sha1.hexSha1OfInputStream(inp);
     }
 
     if (exists(fileName, sha1)) {
