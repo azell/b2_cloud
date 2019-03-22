@@ -33,14 +33,14 @@ public class Main {
   }
 
   public static void main(String[] args) throws B2Exception, IOException {
-    var executor =
+    ExecutorService executor =
         Executors.newFixedThreadPool(
             Runtime.getRuntime().availableProcessors(),
             B2ExecutorUtils.createThreadFactory("b2_cloud-%d"));
 
-    try (var client = B2StorageHttpClientBuilder.builder("b2_cloud").build();
-        var reader = new BufferedReader(new InputStreamReader(System.in))) {
-      var main = new Main(executor, client, client.getBucketOrNullByName(args[0]));
+    try (B2StorageClient client = B2StorageHttpClientBuilder.builder("b2_cloud").build();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+      Main main = new Main(executor, client, client.getBucketOrNullByName(args[0]));
 
       main.cleanupFiles();
       reader.lines().forEach(main::uploadFile);
@@ -71,7 +71,7 @@ public class Main {
 
   private boolean exists(String fileName, String sha1) throws B2Exception {
     try {
-      var version =
+      B2FileVersion version =
           client.getFileInfoByName(
               B2GetFileInfoByNameRequest.builder(bucket.getBucketName(), fileName).build());
 
@@ -94,10 +94,10 @@ public class Main {
   }
 
   private void upload(String fileName) throws B2Exception, IOException {
-    var file = new File(fileName);
+    File file = new File(fileName);
     String sha1;
 
-    try (var inp = new FileInputStream(file)) {
+    try (InputStream inp = new FileInputStream(file)) {
       sha1 = B2Sha1.hexSha1OfInputStream(inp);
     }
 
@@ -107,7 +107,7 @@ public class Main {
       return;
     }
 
-    var request =
+    B2UploadFileRequest request =
         B2UploadFileRequest.builder(
                 bucket.getBucketId(),
                 fileName,
@@ -116,7 +116,7 @@ public class Main {
             .setListener(listener(fileName))
             .build();
 
-    var version =
+    B2FileVersion version =
         client.getFilePolicy().shouldBeLargeFile(request.getContentSource().getContentLength())
             ? client.uploadLargeFile(request, executor)
             : client.uploadSmallFile(request);
