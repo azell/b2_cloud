@@ -1,9 +1,9 @@
 plugins {
   id 'application'
-  id 'com.diffplug.gradle.spotless' version '3.20.0'
-  id 'com.github.ben-manes.versions' version '0.21.0'
-  id 'com.github.johnrengelman.shadow' version '5.0.0'
-  id 'org.owasp.dependencycheck' version '5.0.0-M2'
+  id 'com.diffplug.spotless' version '5.10.2'
+  id 'com.github.ben-manes.versions' version '0.36.0'
+  id 'com.github.johnrengelman.shadow' version '6.1.0'
+  id 'org.owasp.dependencycheck' version '6.1.1'
 }
 
 repositories {
@@ -32,8 +32,8 @@ tasks.withType(JavaCompile) {
   options.compilerArgs << '-parameters'
   options.deprecation = 'true'
 
-  sourceCompatibility = JavaVersion.VERSION_11
-  targetCompatibility = JavaVersion.VERSION_11
+  sourceCompatibility = JavaVersion.VERSION_15
+  targetCompatibility = JavaVersion.VERSION_15
 }
 
 version = '1.0-dev'
