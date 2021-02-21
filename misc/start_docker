@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+exec docker run --rm -it \
+  -e GRADLE_USER_HOME=/tmp/cache \
+  -u gradle \
+  -v "$PWD":/home/gradle/project \
+  -v /tmp/cache:/tmp/cache \
+  -w /home/gradle/project gradle:6.8.2-jdk15 bash

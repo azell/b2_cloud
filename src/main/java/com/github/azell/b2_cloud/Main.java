@@ -14,6 +14,11 @@ import com.backblaze.b2.client.webApiHttpClient.B2StorageHttpClientBuilder;
 import com.backblaze.b2.util.B2ExecutorUtils;
 import com.backblaze.b2.util.B2Sha1;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.slf4j.Logger;
@@ -25,11 +30,74 @@ public class Main {
   private final ExecutorService executor;
   private final B2StorageClient client;
   private final B2Bucket bucket;
+  private final State state;
 
-  private Main(ExecutorService executor, B2StorageClient client, B2Bucket bucket) {
+  public static class State implements AutoCloseable {
+    private static final String SEP = "\t";
+    private final Map<String, String[]> map = new ConcurrentHashMap<>();
+    private final File src;
+
+    private State(File src) throws IOException {
+      this.src = src;
+
+      // file<tab>last modified time<tab>sha1
+      try (var lines = Files.lines(src.toPath(), StandardCharsets.UTF_8)) {
+        lines.map(s -> s.split(SEP)).forEach(v -> map.put(v[0], new String[] {v[1], v[2]}));
+      }
+    }
+
+    @Override
+    public void close() throws IOException {
+      var dst = File.createTempFile("b2c", null, src.getCanonicalFile().getParentFile());
+
+      dst.deleteOnExit();
+
+      try (var writer = new BufferedWriter(new FileWriter(dst))) {
+        for (var e : map.entrySet()) {
+          var v = e.getValue();
+
+          writer.write(String.join(SEP, e.getKey(), v[0], v[1]));
+          writer.newLine();
+        }
+      }
+
+      Files.move(dst.toPath(), src.toPath(), StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    public String calc(File file) throws IOException {
+      var lastMod = file.lastModified();
+
+      if (lastMod <= 0L) {
+        LOGGER.warn("{} has an invalid last modified time {}", file, lastMod);
+
+        return calcSha1(file);
+      }
+
+      var key = file.getPath();
+      var row = map.get(key);
+      var ts = Long.toString(lastMod, 10);
+
+      if (row == null || !row[0].equals(ts)) {
+        LOGGER.info("{} has an out of date hash", file);
+
+        map.put(key, row = new String[] {ts, calcSha1(file)});
+      }
+
+      return row[1];
+    }
+
+    private String calcSha1(File file) throws IOException {
+      try (var inp = new FileInputStream(file)) {
+        return B2Sha1.hexSha1OfInputStream(inp);
+      }
+    }
+  }
+
+  private Main(ExecutorService executor, B2StorageClient client, B2Bucket bucket, State state) {
     this.executor = executor;
     this.client = client;
     this.bucket = bucket;
+    this.state = state;
   }
 
   public static void main(String[] args) throws B2Exception, IOException {
@@ -39,8 +107,9 @@ public class Main {
             B2ExecutorUtils.createThreadFactory("b2_cloud-%d"));
 
     try (var client = B2StorageHttpClientBuilder.builder("b2_cloud").build();
-        var reader = new BufferedReader(new InputStreamReader(System.in))) {
-      var main = new Main(executor, client, client.getBucketOrNullByName(args[0]));
+        var reader = new BufferedReader(new InputStreamReader(System.in));
+        var state = new State(new File("state.txt"))) {
+      var main = new Main(executor, client, client.getBucketOrNullByName(args[0]), state);
 
       main.cleanupFiles();
       reader.lines().forEach(main::uploadFile);
@@ -95,11 +164,7 @@ public class Main {
 
   private void upload(String fileName) throws B2Exception, IOException {
     var file = new File(fileName);
-    String sha1;
-
-    try (var inp = new FileInputStream(file)) {
-      sha1 = B2Sha1.hexSha1OfInputStream(inp);
-    }
+    String sha1 = state.calc(file);
 
     if (exists(fileName, sha1)) {
       LOGGER.info("{} exists with matching checksum {}", fileName, sha1);
